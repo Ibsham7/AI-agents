@@ -18,21 +18,34 @@ Every component — the loop, the tool dispatcher, error recovery, multi-turn hi
 
 ## Before Day 1 — Setup Checklist (2–3 hrs)
 
-### API Keys (all free tiers, no credit card required for basics)
+### API Keys (all free tiers, no credit card required)
 
 | Service | What it's for | Free tier | Signup link |
 |---|---|---|---|
-| Anthropic | Claude API (the brain) | ~$5 free credits on signup | https://console.anthropic.com |
+| OpenRouter | LLM API gateway — access free models via one key | 50 req/day, 20 req/min, no card needed | https://openrouter.ai |
 | Tavily | Web search for agents | 1,000 searches/month free | https://app.tavily.com |
 | Serper | Google SERP fallback | 2,500 queries/month free | https://serper.dev |
 
-> **Note on Anthropic API cost:** Claude Haiku 4.5 is extremely cheap (~$0.0008/1K tokens). Run all your Week 1 experiments on Haiku. Switch to Sonnet only when debugging or doing final runs. A full week of development should cost you under $3.
+> **On the Anthropic API:** Anthropic stopped giving free signup credits to free-tier accounts. Don't worry — OpenRouter gives you free access to models that are genuinely good enough for all of Week 1. Once you're ready to spend a few dollars (Weeks 4–6 when you're building your actual projects), adding $5–10 to OpenRouter unlocks Claude Sonnet and bumps your daily request limit to 1,000/day. You don't need to do that now.
+
+**Verified free models on OpenRouter as of June 2026 — all support tool calling:**
+
+| Model ID | Notes |
+|---|---|
+| `openrouter/owl-alpha` | **Start here.** OpenRouter's own model, purpose-built for agentic workloads, native tool use, 1M context. No `:free` suffix needed — it's always free. |
+| `openai/gpt-oss-20b:free` | OpenAI open-weight 20B MoE, tool use + structured output, fast, good fallback |
+| `google/gemma-4-31b-it:free` | Google Gemma 4, native function calling, 256K context |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 120B hybrid MoE, 1M context, built for multi-agent tasks |
+
+**Use `openrouter/owl-alpha` as your primary model.** It's OpenRouter's own model, so it won't be quietly paywalled like `deepseek-chat-v3-0324` was — providers remove their models from the free tier without notice, but OpenRouter controls this one directly.
+
+> **How to verify any model is still free before using it:** go to `https://openrouter.ai/models/<model-id>` (e.g. `https://openrouter.ai/openai/gpt-oss-20b`) and check the pricing shown. If it says `$0/M input tokens $0/M output tokens`, it's free. Do this check whenever a model throws a 404 or payment error — don't assume the doc is still accurate, the free tier changes frequently.
 
 ### Python Environment
 ```bash
 python -m venv agents-env
 source agents-env/bin/activate  # Windows: agents-env\Scripts\activate
-pip install anthropic tavily-python requests python-dotenv rich pydantic
+pip install openai tavily-python requests python-dotenv rich pydantic
 ```
 
 ### Project Folder Structure (set this up now, it will grow)
@@ -63,8 +76,8 @@ Every agent interaction, no matter how complex, is this loop:
 ```
 1. You send: [system prompt] + [tool schemas] + [conversation history]
 2. Model returns one of two things:
-   a. stop_reason = "tool_use"  → model wants to call a function
-   b. stop_reason = "end_turn"  → model is done, gives final answer
+   a. finish_reason = "tool_calls"  → model wants to call a function
+   b. finish_reason = "stop"        → model is done, gives final answer
 3. If (a): execute the function yourself, append result to history, go to step 1
 4. If (b): you have your answer
 ```
@@ -82,10 +95,10 @@ https://www.anthropic.com/research/building-effective-agents
 - This is the canonical reference. Read it once for the big picture, then again slowly and take notes on the five workflow patterns.
 - Key mental model to extract: the difference between **workflow** (you control the flow) and **agent** (the model controls the flow).
 
-**2. Anthropic Tool Use — Official Docs**
+**2. Anthropic Tool Use — Official Docs (read for concepts, not syntax)**
 https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
 - Read: Overview → How tool use works → Define tools → Handle tool calls
-- This is the API contract. You're going to implement it by hand so you need to know exactly what the request/response cycle looks like.
+- You're using OpenRouter's OpenAI-compatible API, not the Anthropic SDK directly — but the underlying concepts (tool schemas, the request/response cycle, handling tool calls) are identical. Read this for mental model, then use the OpenAI function-calling docs for exact syntax: https://platform.openai.com/docs/guides/function-calling
 
 **3. ReAct Paper — Just the Abstract + Section 2 (20 min)**
 https://arxiv.org/abs/2210.03629
@@ -107,52 +120,64 @@ Before writing an agent, you need to be able to read what Claude actually return
 
 ```python
 # 00_raw_api_call.py — Run this first, read the output carefully
-import anthropic, json
+import os, json
+from openai import OpenAI
+from dotenv import load_dotenv
 
-client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+load_dotenv()
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
+
+MODEL = "openrouter/owl-alpha"
 
 # Step 1: No tools — just a plain call
-response = client.messages.create(
-    model="claude-haiku-4-5",
+response = client.chat.completions.create(
+    model=MODEL,
     max_tokens=512,
     messages=[{"role": "user", "content": "What is 847 * 23?"}]
 )
 print("=== PLAIN RESPONSE ===")
 print(json.dumps(response.model_dump(), indent=2))
-# Study: content, stop_reason, usage (note the token counts)
+# Study: choices[0].finish_reason, choices[0].message.content, usage
 
 # Step 2: With a tool defined — model should choose to use it
-response = client.messages.create(
-    model="claude-haiku-4-5",
+response = client.chat.completions.create(
+    model=MODEL,
     max_tokens=512,
     tools=[{
-        "name": "calculator",
-        "description": "Perform arithmetic calculations. Use this for any math.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "expression": {
-                    "type": "string",
-                    "description": "A math expression to evaluate, e.g. '847 * 23'"
-                }
-            },
-            "required": ["expression"]
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": "Perform arithmetic calculations. Use this for any math.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "A math expression to evaluate, e.g. '847 * 23'"
+                    }
+                },
+                "required": ["expression"]
+            }
         }
     }],
     messages=[{"role": "user", "content": "What is 847 * 23?"}]
 )
 print("\n=== TOOL USE RESPONSE ===")
 print(json.dumps(response.model_dump(), indent=2))
-# Study: stop_reason is now "tool_use"
-# The content block with type="tool_use" has: id, name, input
-# This is Claude saying "please run this function for me"
+# Study: finish_reason is now "tool_calls"
+# choices[0].message.tool_calls[0] has: id, function.name, function.arguments (JSON string)
+# This is the model saying "please run this function for me"
 ```
 
 **What to look for in the output:**
-- `stop_reason: "tool_use"` vs `"end_turn"` — this is your branching condition
-- `content[].type` — can be `"text"` or `"tool_use"` in the same response
-- `tool_use.id` — you must echo this back exactly when returning the result
-- `usage` — track input vs output tokens; this is your cost meter
+- `finish_reason: "tool_calls"` vs `"stop"` — this is your branching condition
+- `choices[0].message.tool_calls` — list of tool calls, each with `.id`, `.function.name`, `.function.arguments` (a JSON string you must parse)
+- `tool_calls[].id` — you must echo this back as `tool_call_id` when returning the result
+- `usage` — track `prompt_tokens` vs `completion_tokens`; this is your cost meter
 
 ### Afternoon: Build the Full Single-Tool Loop (2.5 hrs)
 
@@ -160,33 +185,43 @@ Now implement the full cycle manually:
 
 ```python
 # 01_single_tool.py
-import anthropic, os
+import os, json
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
-client = anthropic.Anthropic()
 
-# ─── Tool Definition ────────────────────────────────────────────────────────
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
+
+MODEL = "openrouter/owl-alpha"
+
+# ─── Tool Definition ──────────────────────────────────────────────────────────
 TOOLS = [{
-    "name": "calculator",
-    "description": (
-        "Evaluate a mathematical expression. Use for any arithmetic, "
-        "percentages, unit conversions, or multi-step calculations. "
-        "Pass a valid Python math expression as a string."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "expression": {
-                "type": "string",
-                "description": "Python-evaluable math expression, e.g. '(100 * 1.15) ** 2'"
-            }
-        },
-        "required": ["expression"]
+    "type": "function",
+    "function": {
+        "name": "calculator",
+        "description": (
+            "Evaluate a mathematical expression. Use for any arithmetic, "
+            "percentages, unit conversions, or multi-step calculations. "
+            "Pass a valid Python math expression as a string."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "Python-evaluable math expression, e.g. '(100 * 1.15) ** 2'"
+                }
+            },
+            "required": ["expression"]
+        }
     }
 }]
 
-# ─── Tool Executor ───────────────────────────────────────────────────────────
+# ─── Tool Executor ────────────────────────────────────────────────────────────
 def execute_tool(tool_name: str, tool_input: dict) -> str:
     if tool_name == "calculator":
         try:
@@ -197,51 +232,52 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
             return f"Error: {e}"
     return f"Unknown tool: {tool_name}"
 
-# ─── Agent Loop ──────────────────────────────────────────────────────────────
+# ─── Agent Loop ───────────────────────────────────────────────────────────────
 def run_agent(user_query: str, max_iterations: int = 10) -> str:
     messages = [{"role": "user", "content": user_query}]
     
     for iteration in range(max_iterations):
         print(f"\n--- Iteration {iteration + 1} ---")
         
-        response = client.messages.create(
-            model="claude-haiku-4-5",
+        response = client.chat.completions.create(
+            model=MODEL,
             max_tokens=1024,
             tools=TOOLS,
             messages=messages
         )
         
-        print(f"Stop reason: {response.stop_reason}")
+        msg = response.choices[0].message
+        finish_reason = response.choices[0].finish_reason
+        print(f"Finish reason: {finish_reason}")
         
         # Case 1: Model is done
-        if response.stop_reason == "end_turn":
-            for block in response.content:
-                if hasattr(block, "text"):
-                    return block.text
+        if finish_reason == "stop":
+            return msg.content or "No response"
         
         # Case 2: Model wants to use a tool
-        if response.stop_reason == "tool_use":
-            # Append the model's response (with tool_use blocks) to history
-            messages.append({"role": "assistant", "content": response.content})
+        if finish_reason == "tool_calls":
+            # Append the assistant message (with tool_calls) to history
+            messages.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": msg.tool_calls
+            })
             
             # Process every tool call in this response (there can be multiple)
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    print(f"Tool called: {block.name}")
-                    print(f"Input: {block.input}")
-                    
-                    result = execute_tool(block.name, block.input)
-                    print(f"Result: {result}")
-                    
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,   # Must match exactly
-                        "content": result
-                    })
-            
-            # Append all tool results as a user turn
-            messages.append({"role": "user", "content": tool_results})
+            for tc in msg.tool_calls:
+                tool_input = json.loads(tc.function.arguments)
+                print(f"Tool called: {tc.function.name}")
+                print(f"Input: {tool_input}")
+                
+                result = execute_tool(tc.function.name, tool_input)
+                print(f"Result: {result}")
+                
+                # Each result goes back as its own "tool" role message
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,   # Must match exactly
+                    "content": result
+                })
     
     return "Max iterations reached"
 
@@ -259,7 +295,7 @@ if __name__ == "__main__":
 
 **Exercise after getting it working:**
 1. Print the full `messages` list at the end — study how the conversation history grew
-2. Deliberately break the `tool_use_id` echo and observe what happens
+2. Deliberately break the `tool_call_id` echo and observe what happens
 3. Ask something that doesn't require a tool — confirm `end_turn` fires on the first pass
 
 ---
@@ -272,67 +308,77 @@ Now add a web search tool and a text-length counter alongside the calculator. Th
 
 ```python
 # agent/tools.py — Tool definitions and executors
-import requests, os
+import os, json
 from tavily import TavilyClient
 
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
+# OpenAI-compatible tool schema format (works with OpenRouter)
 TOOL_DEFINITIONS = [
     {
-        "name": "web_search",
-        "description": (
-            "Search the web for current, factual information. Use this when the "
-            "question requires up-to-date data, recent events, specific facts you "
-            "don't know, or verification of claims. Returns a list of relevant "
-            "results with titles, URLs, and content snippets."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "A specific, targeted search query. Be precise."
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": (
+                "Search the web for current, factual information. Use this when the "
+                "question requires up-to-date data, recent events, specific facts you "
+                "don't know, or verification of claims. Returns a list of relevant "
+                "results with titles, URLs, and content snippets."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A specific, targeted search query. Be precise."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Number of results to return. Default 5, max 10.",
+                        "default": 5
+                    }
                 },
-                "max_results": {
-                    "type": "integer",
-                    "description": "Number of results to return. Default 5, max 10.",
-                    "default": 5
-                }
-            },
-            "required": ["query"]
+                "required": ["query"]
+            }
         }
     },
     {
-        "name": "calculator",
-        "description": (
-            "Evaluate a mathematical expression. Use ONLY for arithmetic, "
-            "percentages, and numeric calculations. Do NOT use for text processing."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "expression": {"type": "string"}
-            },
-            "required": ["expression"]
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": (
+                "Evaluate a mathematical expression. Use ONLY for arithmetic, "
+                "percentages, and numeric calculations. Do NOT use for text processing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string"}
+                },
+                "required": ["expression"]
+            }
         }
     },
     {
-        "name": "count_words",
-        "description": (
-            "Count words, characters, or sentences in a piece of text. "
-            "Use when the task requires measuring text length or content volume."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string", "description": "Text to analyze"},
-                "count_type": {
-                    "type": "string",
-                    "enum": ["words", "characters", "sentences"],
-                    "description": "What to count"
-                }
-            },
-            "required": ["text", "count_type"]
+        "type": "function",
+        "function": {
+            "name": "count_words",
+            "description": (
+                "Count words, characters, or sentences in a piece of text. "
+                "Use when the task requires measuring text length or content volume."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to analyze"},
+                    "count_type": {
+                        "type": "string",
+                        "enum": ["words", "characters", "sentences"],
+                        "description": "What to count"
+                    }
+                },
+                "required": ["text", "count_type"]
+            }
         }
     }
 ]
@@ -388,15 +434,15 @@ For each one, log which tool(s) were called. If the wrong tool fires, fix the de
 ### What ReAct Looks Like in Your Conversation History
 
 ```
-User: Research and explain why Python became dominant in ML
-Assistant: [text: "I'll research this systematically. Let me start with..."]
-           [tool_use: web_search("Python ML dominance history")]
-User: [tool_result: "... search results ..."]
-Assistant: [text: "Good. Now let me look at adoption statistics..."]
-           [tool_use: web_search("Python ML adoption statistics 2024")]
-User: [tool_result: "..."]
-Assistant: [text: "Based on my research, Python became dominant because..."]
-           ← stop_reason = "end_turn", no more tool calls
+User:      Research and explain why Python became dominant in ML
+Assistant: [content: "I'll research this systematically. Let me start with..."]
+           [tool_calls: web_search("Python ML dominance history")]
+Tool:      [tool_call_id: "...", content: "... search results ..."]
+Assistant: [content: "Good. Now let me look at adoption statistics..."]
+           [tool_calls: web_search("Python ML adoption statistics 2024")]
+Tool:      [tool_call_id: "...", content: "..."]
+Assistant: [content: "Based on my research, Python became dominant because..."]
+           ← finish_reason = "stop", no more tool_calls
 ```
 
 The model's text blocks between tool calls are its "thoughts" — explicit reasoning about what it learned and what to do next. Your system prompt needs to encourage this.
@@ -447,19 +493,31 @@ RULES:
 
 ```python
 # 03_react_loop.py
-import anthropic, json
+import os, json
+from openai import OpenAI
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 from agent.tools import TOOL_DEFINITIONS, execute_tool
 from agent.prompts import RESEARCH_AGENT_SYSTEM
 
-client = anthropic.Anthropic()
+load_dotenv()
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
+
+MODEL = "openrouter/owl-alpha"
 
 def run_research_agent(query: str, max_iterations: int = 15) -> dict:
     """
     Returns a dict with: answer, tool_call_log, token_usage, duration
     """
-    messages = [{"role": "user", "content": query}]
+    messages = [
+        {"role": "system", "content": RESEARCH_AGENT_SYSTEM},
+        {"role": "user", "content": query}
+    ]
     tool_log = []
     total_tokens = {"input": 0, "output": 0}
     start = datetime.now()
@@ -467,65 +525,63 @@ def run_research_agent(query: str, max_iterations: int = 15) -> dict:
     print(f"\n🔍 Research Query: {query}\n{'='*60}")
     
     for i in range(max_iterations):
-        response = client.messages.create(
-            model="claude-haiku-4-5",
+        response = client.chat.completions.create(
+            model=MODEL,
             max_tokens=2048,
-            system=RESEARCH_AGENT_SYSTEM,
             tools=TOOL_DEFINITIONS,
             messages=messages
         )
         
+        msg = response.choices[0].message
+        finish_reason = response.choices[0].finish_reason
+        
         # Track tokens
-        total_tokens["input"] += response.usage.input_tokens
-        total_tokens["output"] += response.usage.output_tokens
+        if response.usage:
+            total_tokens["input"] += response.usage.prompt_tokens
+            total_tokens["output"] += response.usage.completion_tokens
         
-        # Print the model's reasoning (text blocks)
-        for block in response.content:
-            if hasattr(block, "text") and block.text:
-                print(f"\n💭 Thought:\n{block.text}")
+        # Print the model's reasoning (text content)
+        if msg.content:
+            print(f"\n💭 Thought:\n{msg.content}")
         
-        if response.stop_reason == "end_turn":
-            # Extract the final answer
-            final = next(
-                (b.text for b in response.content if hasattr(b, "text") and b.text),
-                "No text response"
-            )
+        if finish_reason == "stop":
             duration = (datetime.now() - start).seconds
             return {
-                "answer": final,
+                "answer": msg.content or "No response",
                 "tool_calls": len(tool_log),
                 "tool_log": tool_log,
                 "tokens": total_tokens,
                 "duration_sec": duration
             }
         
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
+        if finish_reason == "tool_calls":
+            # Append assistant message (with tool_calls) to history
+            messages.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": msg.tool_calls
+            })
             
-            for block in response.content:
-                if block.type == "tool_use":
-                    print(f"\n🔧 Tool: {block.name}")
-                    print(f"   Input: {json.dumps(block.input, indent=2)}")
-                    
-                    result = execute_tool(block.name, block.input)
-                    # Truncate for display but send full result to model
-                    print(f"   Result preview: {result[:200]}...")
-                    
-                    tool_log.append({
-                        "iteration": i + 1,
-                        "tool": block.name,
-                        "input": block.input,
-                        "result_length": len(result)
-                    })
-                    
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result
-                    })
-            
-            messages.append({"role": "user", "content": tool_results})
+            for tc in msg.tool_calls:
+                tool_input = json.loads(tc.function.arguments)
+                print(f"\n🔧 Tool: {tc.function.name}")
+                print(f"   Input: {json.dumps(tool_input, indent=2)}")
+                
+                result = execute_tool(tc.function.name, tool_input)
+                print(f"   Result preview: {result[:200]}...")
+                
+                tool_log.append({
+                    "iteration": i + 1,
+                    "tool": tc.function.name,
+                    "input": tool_input,
+                    "result_length": len(result)
+                })
+                
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result
+                })
     
     return {"answer": "Max iterations reached", "tool_log": tool_log}
 
@@ -570,22 +626,21 @@ This is the most underrated skill in agent development. A tool can fail because:
 ```python
 # 04_error_recovery.py — Add this to your execute_tool function
 
-from typing import Union
-
 class ToolResult:
     def __init__(self, content: str, is_error: bool = False):
         self.content = content
         self.is_error = is_error
     
-    def to_api_format(self, tool_use_id: str) -> dict:
-        result = {
-            "type": "tool_result",
-            "tool_use_id": tool_use_id,
-            "content": self.content
+    def to_api_format(self, tool_call_id: str) -> dict:
+        # In OpenAI format, errors are just returned as string content —
+        # the model reads the error text and decides what to do next.
+        # Prefix error messages clearly so the model recognises them.
+        content = f"ERROR: {self.content}" if self.is_error else self.content
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": content
         }
-        if self.is_error:
-            result["is_error"] = True  # Claude handles this gracefully
-        return result
 
 def execute_tool_safe(name: str, input_data: dict) -> ToolResult:
     try:
@@ -640,7 +695,7 @@ Now assemble everything into the actual project. The agent should:
 5. **Write** a cited markdown report with proper sections
 6. **Self-evaluate** (one final loop where it checks: are all claims sourced? is anything missing? is the report well-structured?)
 
-The self-evaluation is the stretch goal — implement it as a second Claude call after the research is done, with the report as input and a rubric as the system prompt. It returns a list of issues, you show the issues to the main agent, and it revises.
+The self-evaluation is the stretch goal — implement it as a second model call after the research is done, with the report as input and a rubric as the system prompt. It returns a list of issues, you show the issues to the main agent, and it revises.
 
 ### Suggested Research Topics to Test Against
 - `"Explain how the attention mechanism works, with focus on computational complexity and recent efficiency improvements like FlashAttention"`
@@ -661,7 +716,7 @@ The self-evaluation is the stretch goal — implement it as a second Claude call
 
 3. **Redesign the tool descriptions.** Take your current `web_search` description, rewrite it to be deliberately vague, run the same queries, and document which ones break. Then fix it and document the difference. This teaches you how much tool behavior lives in the description.
 
-4. **Token cost audit.** Run your three best test queries. Log input tokens, output tokens, and total cost at Haiku pricing. Estimate what the same runs would cost on Sonnet. When is Sonnet worth it?
+4. **Token cost audit.** Run your three best test queries. Log `prompt_tokens` and `completion_tokens` from `response.usage`. Free-tier models cost $0 — but note the total token count anyway, because when you eventually move to paid models (Sonnet, GPT-4o), you'll want to know how token-heavy your agent is before the bill arrives. Estimate what the same runs would cost on DeepSeek V3 paid vs Claude Sonnet.
 
 5. **What is one thing your agent does wrong that isn't a code bug — it's a prompt problem?** Identify it, fix the system prompt, verify the fix.
 
@@ -672,9 +727,9 @@ The self-evaluation is the stretch goal — implement it as a second Claude call
 ### Official docs (free, authoritative)
 | Resource | URL |
 |---|---|
-| Anthropic API — Tool Use overview | https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview |
-| Anthropic API — Define tools | https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use |
-| Anthropic Cookbook — Agents patterns | https://github.com/anthropics/anthropic-cookbook/tree/main/patterns/agents |
+| OpenAI Function Calling docs (your actual API syntax) | https://platform.openai.com/docs/guides/function-calling |
+| OpenRouter models list (filter by :free) | https://openrouter.ai/models/?q=free |
+| Anthropic Cookbook — Agents patterns (concepts) | https://github.com/anthropics/anthropic-cookbook/tree/main/patterns/agents |
 | Anthropic — Building Effective Agents | https://www.anthropic.com/research/building-effective-agents |
 | ReAct paper (skim sec 1–2 only) | https://arxiv.org/abs/2210.03629 |
 | Tavily docs | https://docs.tavily.com |
@@ -693,9 +748,9 @@ The self-evaluation is the stretch goal — implement it as a second Claude call
 
 Before moving to Week 2, you should be able to answer **yes** to all of these:
 
-- [ ] I can explain what `stop_reason: "tool_use"` means and exactly what you must send back
+- [ ] I can explain what `finish_reason: "tool_calls"` means and exactly what you must send back
 - [ ] I can draw the full multi-turn message history of a 3-tool-call agent run from memory
-- [ ] I understand why `tool_use_id` must be echoed and what breaks if you don't
+- [ ] I understand why `tool_call_id` must be echoed and what breaks if you don't
 - [ ] I can write a tool description that guides correct tool selection
 - [ ] My agent handles tool errors without crashing — the model knows what went wrong
 - [ ] I have a working `max_iterations` guard and understand why it's necessary
