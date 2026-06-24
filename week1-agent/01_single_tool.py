@@ -93,14 +93,16 @@ def run_agent(user_query: str, max_iterations: int = 10) -> str:
                     "tool_call_id": tc.id,   # Must match exactly
                     "content": result
                 })
+    print(messages)
     
     return "Max iterations reached"
 
 # ─── Test It ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     queries = [
-        "If I invest $5000 at 7% annual return compounded monthly for 10 years, how much will I have?",
+        # "If I invest $5000 at 7% annual return compounded monthly for 10 years, how much will I have?",
         "A store is selling 3 items: a shirt for $45.99, pants for $89.50, and shoes for $120. What's the total after 15% discount and 8% tax?",
+        # "what is capital of Pakistan"
     ]
     for q in queries:
         print(f"\n{'='*60}\nQuery: {q}\n{'='*60}")

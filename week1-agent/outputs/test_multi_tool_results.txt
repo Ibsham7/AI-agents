@@ -1,0 +1,38 @@
+
+============================================================
+Query: Search the web for the latest news about SpaceX and summarize it in 2 sentences.
+============================================================
+
+--- Iteration 1 ---
+Finish reason: tool_calls
+Tool called: web_search
+Input: {'query': 'latest news about SpaceX June 2026', 'max_results': 5}
+Result: **SpaceX shares drop below debut price before jumping amid $600bn ...**
+URL: https://www.aljazeera.com/economy/2026/6/23/spacex-shares-drop-below-debut-price-before-jumping-amid-600bn-sell-off
+SpaceX shares dip below debut price, erasing $600bn in value before recovering 2.4 percent amid tech market turbulence. Listen (4 mins).
+
+---
+**SpaceX weighs June 2026 IPO at $1.5 trillion valuation, FT reports**
+URL: https://finance.yahoo.com/news/spacex-weighs-june-2026-ipo-050746238.html
+Jan 28 (Reuters) - Elon Musk's ​SpaceX ‌is weighing a ‌mid-June 2026 initial public offering, aiming ⁠to ‌raise as much ‍as $50 billion at a
+
+---
+**SpaceX shares to more than double to above $400, research firm ...**
+URL: https://www.cnbc.com/2026/06/18/spacex-shares-to-more-than-double-to-above-400-says-research-firm.html
+SpaceX shares to more than double to above $400, research firm predicts. Published Thu, Jun 18 20262:01 PM EDT Updated Thu, Jun 18 20262
+
+---
+**SpaceX Nears $3 Trillion in Value | Open Interest 6/16/2026**
+URL: https://www.youtube.com/watch?v=xYQeVng50uY
+SpaceX Nears $3 Trillion in Value | Open Interest 6/16/2026. 2.9K ... Fareed Zakaria GPS 6/21/26 | CNN Breaking News Today June 21, 2026.
+
+---
+**SpaceX plans to set IPO price at $135 per share, targeting ... - Reuters**
+URL: https://www.reuters.com/business/media-telecom/spacex-plans-raise-75-billion-ipo-135-per-share-source-says-2026-06-03
+SpaceX plans to set IPO price at $135 per share, targeting record $75 billion raise, source says. By Echo Wang. June 2, 20265:26 PM PDTUpdated
+
+
+--- Iteration 2 ---
+Finish reason: stop
+
+Final Answer: SpaceX is gearing up for a mid‑June 2026 initial public offering, with the company targeting an IPO price of about $135 per share and aiming to raise as much as $75 billion, which would value the firm at roughly $1.5 trillion. The news has already sent the private‑market price of SpaceX shares on a roller‑coaster ride – briefly slipping below its debut level, erasing around $600 billion in market value, before rallying over 2 % as investors anticipate the historic listing.
