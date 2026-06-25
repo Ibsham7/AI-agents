@@ -107,7 +107,7 @@ CODE_REVIEW_TOOLS : list[Any] = [
 ]
 
 
-DATA_ANALYST_TOOLS = [
+DATA_ANALYST_TOOLS :list[Any]= [
     {
         "type": "function",
         "function": {
