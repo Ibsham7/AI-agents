@@ -1,0 +1,7 @@
+pandas 
+matplotlib 
+seaborn 
+tabulate 
+pytest 
+radon 
+pyflakes
