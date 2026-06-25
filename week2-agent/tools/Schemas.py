@@ -105,3 +105,71 @@ CODE_REVIEW_TOOLS : list[Any] = [
         }
     }
 ]
+
+
+DATA_ANALYST_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_csv",
+            "description": (
+                "Get a structural summary of a CSV file: column names, data types, "
+                "value ranges, null counts, and a sample of rows. "
+                "ALWAYS call this before writing any analysis code for a new file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filepath": {"type": "string"}
+                },
+                "required": ["filepath"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_analysis",
+            "description": (
+                "Execute Python code in a persistent session. "
+                "pd (pandas), plt (matplotlib.pyplot), and sns (seaborn) are already imported. "
+                "Variables defined in previous calls are still in scope — "
+                "you do NOT need to reload the CSV if df is already defined. "
+                "To save a chart: plt.savefig('outputs/charts/name.png'); plt.close(). "
+                "Always print() your final results so they appear in the output."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python code to execute in the persistent session."
+                    }
+                },
+                "required": ["code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_session_state",
+            "description": (
+                "List all variables currently defined in the analysis session. "
+                "Call this if you're unsure whether df or other variables already exist."
+            ),
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reset_session",
+            "description": (
+                "Clear all variables from the session and start fresh. "
+                "Use this when switching to a completely different dataset or analysis."
+            ),
+            "parameters": {"type": "object", "properties": {}}
+        }
+    }
+]
