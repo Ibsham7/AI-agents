@@ -1,5 +1,5 @@
 import sys
-sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding='utf-8') # type: ignore
 
 from ingestion.embedder import ingest_pdf
 from retrieval.retriever import retrieve, build_context

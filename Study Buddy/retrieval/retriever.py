@@ -1,7 +1,9 @@
-import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-from ingestion.embedder import get_collection
 from dataclasses import dataclass
+from database.pinecone_client import get_pinecone_index
+from sentence_transformers import SentenceTransformer
+
+# Initialize the embedding model
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 @dataclass
 class RetrievedChunk:
@@ -17,38 +19,36 @@ class RetrievedChunk:
 
 def retrieve(
     query: str,
-    collection_name: str = "study_notes",
+    user_id: str,
     n_results: int = 5,
-    min_similarity: float = 0.65   # filter out low-quality matches (0.5 is mathematically unrelated)
+    min_similarity: float = 0.65   # filter out low-quality matches
 ) -> list[RetrievedChunk]:
     """
-    Embed the query and retrieve the most similar chunks from ChromaDB.
+    Embed the query and retrieve the most similar chunks from Pinecone for a specific user.
     """
-    collection = get_collection(collection_name)
-    
-    if collection.count() == 0:
+    index = get_pinecone_index()
+    if index is None:
+        print("Pinecone index not initialized.")
         return []
     
-    results = collection.query(
-        query_texts=[query],
-        n_results=min(n_results, collection.count()),
-        include=["documents", "metadatas", "distances"]
+    query_embedding = model.encode(query).tolist()
+    
+    response = index.query(
+        vector=query_embedding,
+        top_k=n_results,
+        include_metadata=True,
+        filter={
+            "user_id": {"$eq": user_id}
+        }
     )
     
     chunks = []
-    for doc, meta, distance in zip(
-        results["documents"][0], # type: ignore
-        results["metadatas"][0], # type: ignore
-        results["distances"][0]  # type: ignore
-    ):
-        # ChromaDB returns cosine distance (0 = identical, 2 = opposite)
-        # Convert to similarity score (1 = identical, 0 = opposite)
-        similarity = 1 - (distance / 2)
-        
+    for match in response.matches:
+        similarity = match.score
         if similarity >= min_similarity:
             chunks.append(RetrievedChunk(
-                text=doc,
-                metadata=meta, # type: ignore
+                text=match.metadata.get("text", ""),
+                metadata=match.metadata,
                 similarity_score=similarity
             ))
     

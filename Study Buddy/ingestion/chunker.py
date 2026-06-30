@@ -1,4 +1,4 @@
-import re
+wimport re
 import tiktoken
 from dataclasses import dataclass
 from typing import Iterator

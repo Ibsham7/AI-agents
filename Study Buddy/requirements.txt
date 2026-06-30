@@ -1,0 +1,20 @@
+# Core AI & Search
+pinecone
+sentence-transformers
+openai
+tiktoken
+pypdf
+
+# Backend Web Server
+fastapi
+uvicorn
+pydantic
+python-multipart
+
+# Database & Storage
+firebase-admin
+cloudinary
+
+# Utilities
+python-dotenv
+rich

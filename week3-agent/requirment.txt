@@ -1,5 +1,0 @@
-chromadb 
-sentence-transformers 
-pypdf 
-rich 
-tiktoken
