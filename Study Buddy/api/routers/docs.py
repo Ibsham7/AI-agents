@@ -20,11 +20,7 @@ cloudinary.config(
 
 router = APIRouter()
 
-def get_current_user(token: str):
-    user = verify_token(token)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
-    return user["uid"]
+from api.dependencies import get_current_user
 
 def process_pdf_background(pdf_path: str, user_id: str, document_id: str):
     try:
@@ -44,7 +40,7 @@ def process_pdf_background(pdf_path: str, user_id: str, document_id: str):
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    user_id: str = "default_user" # Mock auth for now: Depends(get_current_user)
+    user_id: str = Depends(get_current_user)
 ):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
@@ -88,7 +84,7 @@ async def upload_document(
     return DocumentUploadResponse(document_id=document_id, status="processing")
 
 @router.get("/", response_model=list[DocumentResponse])
-async def list_documents(user_id: str = "default_user"):
+async def list_documents(user_id: str = Depends(get_current_user)):
     if not db:
         return []
         

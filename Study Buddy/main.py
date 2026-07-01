@@ -11,7 +11,7 @@ app = FastAPI(title="Study Buddy API")
 # Add CORS middleware to allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For production, restrict this to the frontend URL
+    allow_origins=["*"], # TODO(production): Restrict this to the frontend URL for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

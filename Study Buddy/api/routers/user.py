@@ -1,11 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from api.schemas import UserStatsResponse, TopicRecordSchema
 from memory.user_state import UserState
+
+from api.dependencies import get_current_user
 
 router = APIRouter()
 
 @router.get("/stats", response_model=UserStatsResponse)
-async def get_user_stats(user_id: str = "default_user"):
+async def get_user_stats(user_id: str = Depends(get_current_user)):
     """
     Get user progress, accuracy, and weak topics.
     """

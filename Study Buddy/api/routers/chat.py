@@ -1,13 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from api.schemas import ChatRequest, ChatResponse
 from agents.study_buddy import generate_agent_response
+
+from api.dependencies import get_current_user
 
 router = APIRouter()
 
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
-    user_id: str = "default_user" # Mock auth for now
+    user_id: str = Depends(get_current_user)
 ):
     """
     Send a message to the agent and receive a response.

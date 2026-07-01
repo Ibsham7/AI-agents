@@ -1,13 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from api.schemas import QuizResultRequest, QuizResultResponse
 from memory.user_state import UserState
+
+from api.dependencies import get_current_user
 
 router = APIRouter()
 
 @router.post("/result", response_model=QuizResultResponse)
 async def submit_quiz_result(
     request: QuizResultRequest,
-    user_id: str = "default_user"
+    user_id: str = Depends(get_current_user)
 ):
     """
     Record if a user got a specific quiz topic question right or wrong.
